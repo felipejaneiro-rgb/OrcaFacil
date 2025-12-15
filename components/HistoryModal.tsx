@@ -342,7 +342,7 @@ const HistoryModal: React.FC<Props> = ({ onLoadQuote }) => {
                     </Button>
                 </div>
            </div>
-        </Card>
+        </div>
     </div>
   );
 };
