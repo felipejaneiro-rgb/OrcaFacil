@@ -30,7 +30,10 @@ export const authService = {
   register: (userData: Omit<User, 'id' | 'createdAt' | 'passwordHash'> & { password: string }): User => {
     const users = authService.getUsers();
     
-    // Check duplication
+    // Check duplication (Email or CNPJ)
+    if (users.some(u => u.email.toLowerCase() === userData.email.toLowerCase())) {
+      throw new Error('E-mail já cadastrado.');
+    }
     if (users.some(u => u.document === userData.document)) {
       throw new Error('CNPJ já cadastrado.');
     }
@@ -54,14 +57,14 @@ export const authService = {
     return newUser;
   },
 
-  login: (document: string, password: string, remember: boolean): User => {
+  login: (email: string, password: string, remember: boolean): User => {
     const users = authService.getUsers();
-    const cleanDoc = document.replace(/[^\d]+/g, '');
     
-    const user = users.find(u => u.document.replace(/[^\d]+/g, '') === cleanDoc);
+    // Find by Email
+    const user = users.find(u => u.email.toLowerCase() === email.toLowerCase().trim());
     
     if (!user) {
-      throw new Error('Empresa não encontrada.');
+      throw new Error('Usuário não encontrado.');
     }
 
     const inputHash = btoa(password);
@@ -87,13 +90,14 @@ export const authService = {
       localStorage.setItem(USERS_KEY, JSON.stringify(users));
   },
 
-  resetPassword: (document: string, email: string, newPassword: string): void => {
+  resetPassword: (email: string, document: string, newPassword: string): void => {
     const users = authService.getUsers();
     const cleanDoc = document.replace(/[^\d]+/g, '');
 
+    // Verifica se email e documento batem para segurança
     const userIndex = users.findIndex(u => 
-        u.document.replace(/[^\d]+/g, '') === cleanDoc && 
-        u.email.toLowerCase() === email.toLowerCase()
+        u.email.toLowerCase() === email.toLowerCase().trim() &&
+        u.document.replace(/[^\d]+/g, '') === cleanDoc 
     );
 
     if (userIndex === -1) {

@@ -36,7 +36,7 @@ const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
     let value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
     const name = e.target.name;
 
-    // Apply Masks
+    // Apply Masks (Only for fields that need it)
     if (name === 'document') value = maskCNPJ(value as string);
     if (name === 'whatsapp') value = maskPhone(value as string);
 
@@ -50,7 +50,8 @@ const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
     setError(null);
     try {
       await new Promise(r => setTimeout(r, 800)); // Simulate delay
-      authService.login(formData.document, formData.password, Boolean(formData.remember));
+      // Login uses Email now
+      authService.login(formData.email, formData.password, Boolean(formData.remember));
       onLoginSuccess();
     } catch (err: any) {
       setError(err.message || 'Erro ao realizar login');
@@ -63,11 +64,12 @@ const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
     setLoading(true);
     setError(null);
     const devDoc = "99.999.999/9999-99";
+    const devEmail = "dev@orcafacil.com";
     const devPass = "dev123";
     
     try {
-        // Tenta logar
-        authService.login(devDoc, devPass, true);
+        // Tenta logar com email
+        authService.login(devEmail, devPass, true);
         onLoginSuccess();
     } catch (e) {
         // Se falhar (usuário não existe), cria e loga
@@ -75,7 +77,7 @@ const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
             authService.register({
                 name: "Ambiente de Teste (Dev)",
                 document: devDoc,
-                email: "dev@orcafacil.com",
+                email: devEmail,
                 whatsapp: "(11) 99999-9999",
                 website: "localhost",
                 password: devPass
@@ -134,7 +136,7 @@ const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
     setError(null);
     try {
         await new Promise(r => setTimeout(r, 1000));
-        authService.resetPassword(formData.document, formData.email, formData.password);
+        authService.resetPassword(formData.email, formData.document, formData.password);
         setSuccessMsg("Senha alterada com sucesso! Faça login.");
         setTimeout(() => {
             setMode('login');
@@ -211,13 +213,13 @@ const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
             {mode === 'login' && (
                 <form onSubmit={handleLogin} className="space-y-5 animate-fadeIn">
                     <Input 
-                        label="CNPJ da Empresa"
-                        placeholder="00.000.000/0001-00"
-                        name="document"
-                        value={formData.document}
+                        label="E-mail"
+                        placeholder="seu@email.com"
+                        name="email"
+                        type="email"
+                        value={formData.email}
                         onChange={handleChange}
-                        icon={<Briefcase size={18} />}
-                        maxLength={18}
+                        icon={<Mail size={18} />}
                         autoFocus
                     />
                     <div>
@@ -240,7 +242,7 @@ const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
                                     onChange={handleChange}
                                     className="mr-2 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
                                 />
-                                Lembrar CNPJ
+                                Lembrar-me
                              </label>
                              <button 
                                 type="button"
@@ -375,6 +377,15 @@ const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
                     <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-100 dark:border-yellow-800 rounded-lg text-sm text-yellow-800 dark:text-yellow-200">
                         Confirme seus dados cadastrais para definir uma nova senha.
                     </div>
+                     <Input 
+                        label="Email Cadastrado"
+                        type="email"
+                        placeholder="contato@empresa.com"
+                        name="email"
+                        value={formData.email}
+                        onChange={handleChange}
+                        icon={<Mail size={18} />}
+                    />
                     <Input 
                         label="CNPJ Cadastrado"
                         placeholder="00.000.000/0001-00"
@@ -383,15 +394,6 @@ const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
                         onChange={handleChange}
                         icon={<Briefcase size={18} />}
                         maxLength={18}
-                    />
-                    <Input 
-                        label="Email Cadastrado"
-                        type="email"
-                        placeholder="contato@empresa.com"
-                        name="email"
-                        value={formData.email}
-                        onChange={handleChange}
-                        icon={<Mail size={18} />}
                     />
                     <div className="grid grid-cols-2 gap-4">
                         <Input 
