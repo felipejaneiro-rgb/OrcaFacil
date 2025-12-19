@@ -20,14 +20,13 @@ const supabaseUrl = getEnvVar('VITE_SUPABASE_URL') || PROVIDED_URL;
 const supabaseAnonKey = getEnvVar('VITE_SUPABASE_ANON_KEY') || PROVIDED_ANON_KEY;
 
 /**
- * CONFIGURAÇÃO DE SESSÃO RÍGIDA
- * persistSession: false + storage: null garante que o token morra no F5 ou fechar aba.
+ * CONFIGURAÇÃO DE SESSÃO COM PERSISTÊNCIA
+ * persistSession: true permite que o usuário continue logado após F5.
  */
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    persistSession: false,
-    autoRefreshToken: false,
-    detectSessionInUrl: true,
-    storage: null as any // Impede que o SDK escreva/leia do LocalStorage
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true
   }
 });

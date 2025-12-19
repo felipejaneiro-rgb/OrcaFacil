@@ -31,6 +31,7 @@ type AppView = 'dashboard' | 'editor' | 'history' | 'reports' | 'catalog' | 'cli
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isInitializing, setIsInitializing] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [appError, setAppError] = useState<string | null>(null);
 
@@ -42,45 +43,63 @@ const App: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
-  // Função disparada manualmente após Login/Registro
-  const handleAuthSuccess = async (user: User) => {
-    setIsProcessing(true);
-    setAppError(null);
+  // Função central para carregar dados do usuário e empresa
+  const initializeAppData = useCallback(async (user: User) => {
     setCurrentUser(user);
-    
     try {
       const company = await companyService.getCompany(user.id);
       if (company) {
         setDefaultCompany(company);
         setCurrentView('dashboard');
       } else {
-        // Se não tem empresa, vai para o Onboarding (Cadastro de Perfil)
         setCurrentView('onboarding');
       }
     } catch (err: any) {
-      console.error("Erro ao verificar empresa:", err);
+      console.error("Erro ao inicializar dados da empresa:", err);
       setCurrentView('onboarding');
-    } finally {
-      setIsProcessing(false);
     }
-  };
+  }, []);
 
-  // Monitora OAuth (Google) especificamente, mas ignora sessões antigas
+  // Efeito de inicialização: Verifica se já existe uma sessão salva ao abrir o app
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' && session?.user && !currentUser) {
+    const checkSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          const user = authService.mapSupabaseUser(session.user);
+          await initializeAppData(user);
+        }
+      } catch (err) {
+        console.error("Erro na verificação inicial de sessão:", err);
+      } finally {
+        setIsInitializing(false);
+      }
+    };
+
+    checkSession();
+
+    // Escuta mudanças de estado (Login, Logout, Google Redirect)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' && session?.user) {
         const user = authService.mapSupabaseUser(session.user);
-        handleAuthSuccess(user);
+        setIsProcessing(true);
+        await initializeAppData(user);
+        setIsProcessing(false);
+      } else if (event === 'SIGNED_OUT') {
+        setCurrentUser(null);
+        setDefaultCompany(null);
+        setCurrentView('dashboard');
       }
     });
+
     return () => subscription.unsubscribe();
-  }, [currentUser]);
+  }, [initializeAppData]);
 
   const handleLogout = async () => {
-      await authService.logout();
-      setCurrentUser(null);
-      setDefaultCompany(null);
-      window.location.reload();
+      if (confirm('Deseja sair da sua conta?')) {
+        await authService.logout();
+        // O onAuthStateChange cuidará de limpar o estado
+      }
   };
 
   if (appError) {
@@ -90,7 +109,7 @@ const App: React.FC = () => {
                 <AlertCircle size={48} className="text-red-500 mx-auto mb-4" />
                 <h2 className="text-xl font-bold mb-2 dark:text-white">Erro no Aplicativo</h2>
                 <p className="text-gray-600 dark:text-gray-400 mb-6 text-sm">{appError}</p>
-                <button onClick={() => window.location.reload()} className="w-full bg-brand-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-brand-700">
+                <button onClick={() => window.location.reload()} className="w-full bg-brand-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-brand-700 transition-colors">
                   <RefreshCw size={18} /> Recarregar
                 </button>
             </div>
@@ -98,20 +117,24 @@ const App: React.FC = () => {
     );
   }
 
-  if (isProcessing) {
+  // Tela de carregamento inicial (Hidratação)
+  if (isInitializing || isProcessing) {
       return (
         <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 dark:bg-gray-950">
-            <Loader2 className="animate-spin text-brand-600 mb-4" size={48} />
-            <p className="text-gray-500 dark:text-gray-400 font-medium tracking-tight">Verificando conta...</p>
+            <div className="relative">
+                <div className="w-16 h-16 border-4 border-brand-100 dark:border-brand-900/30 rounded-full"></div>
+                <Loader2 className="absolute top-0 left-0 animate-spin text-brand-600" size={64} />
+            </div>
+            <p className="text-gray-500 dark:text-gray-400 font-bold mt-6 tracking-widest uppercase text-[10px]">OrçaFácil Admin</p>
         </div>
       );
   }
 
-  // Se não tem usuário logado, mostra Tela de Auth (Login/Registro)
+  // Se após a inicialização não houver usuário, vai para Auth
   if (!currentUser) {
     return (
       <Suspense fallback={null}>
-        <AuthView onLoginSuccess={handleAuthSuccess} />
+        <AuthView onLoginSuccess={initializeAppData} />
       </Suspense>
     );
   }
