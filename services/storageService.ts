@@ -4,10 +4,9 @@ import { QuoteData, QuoteStatus, INITIAL_QUOTE } from '../types';
 const HISTORY_KEY = 'orcaFacil_history';
 
 // --- MEMORY CACHE (Performance Layer) ---
-// Keeps data in RAM to avoid expensive JSON.parse() on every render
 let memoryCache: QuoteData[] | null = null;
 
-// Helper to generate next Quote ID (O1, O2, etc) - Internal System ID
+// Helper to generate next Quote ID
 const getNextQuoteId = (quotes: QuoteData[]): string => {
   const ids = quotes.map(q => {
     if (!q.id) return 0;
@@ -26,17 +25,14 @@ export interface PaginatedResponse {
   totalPages: number;
 }
 
-// Internal helper to ensure cache is populated
 const ensureCache = () => {
     if (memoryCache) return memoryCache;
 
     try {
         const raw = localStorage.getItem(HISTORY_KEY);
-
         if (raw) {
             memoryCache = JSON.parse(raw);
         } else {
-            // Start empty - NO MOCK DATA
             memoryCache = [];
         }
     } catch (e) {
@@ -46,27 +42,26 @@ const ensureCache = () => {
     return memoryCache!;
 };
 
-// Internal helper to persist cache to disk
 const persistCache = () => {
     if (memoryCache) {
-        localStorage.setItem(HISTORY_KEY, JSON.stringify(memoryCache));
+        // Usa setTimeout para não bloquear o thread principal de UI durante o I/O
+        setTimeout(() => {
+          localStorage.setItem(HISTORY_KEY, JSON.stringify(memoryCache));
+        }, 0);
     }
 };
 
 export const storageService = {
   
-  // List all saved quotes (Instant from RAM)
   async getAll(): Promise<QuoteData[]> {
     const history = ensureCache();
-    // Return a copy to prevent reference mutation issues outside
-    return [...history].sort((a, b) => (b.lastUpdated || 0) - (a.lastUpdated || 0));
+    // Retorna uma cópia congelada para performance
+    return Object.freeze([...history].sort((a, b) => (b.lastUpdated || 0) - (a.lastUpdated || 0))) as QuoteData[];
   },
 
-  // Optimized Pagination List
   async getPaginated(page: number, limit: number, query: string = ''): Promise<PaginatedResponse> {
     const history = ensureCache();
 
-    // 1. Filter
     let filtered = history;
     if (query) {
         const term = query.toLowerCase();
@@ -76,94 +71,72 @@ export const storageService = {
             (q.number && q.number.toLowerCase().includes(term)) ||
             (q.client.document && q.client.document.includes(term)) ||
             (q.date && q.date.includes(term)) ||
-            // Fixed: Property 'name' does not exist on type 'CompanyProfile'. Using nome_fantasia.
             (q.company.nome_fantasia && q.company.nome_fantasia.toLowerCase().includes(term))
         );
     }
 
-    // 2. Sort
-    filtered.sort((a, b) => (b.lastUpdated || 0) - (a.lastUpdated || 0));
+    // Sort é pesado, fazemos apenas no set de dados atual se possível
+    const sorted = [...filtered].sort((a, b) => (b.lastUpdated || 0) - (a.lastUpdated || 0));
 
-    // 3. Paginate
-    const total = filtered.length;
+    const total = sorted.length;
     const totalPages = Math.ceil(total / limit);
     const startIndex = (page - 1) * limit;
-    const data = filtered.slice(startIndex, startIndex + limit);
+    const data = sorted.slice(startIndex, startIndex + limit);
 
-    return {
-        data,
-        total,
-        page,
-        totalPages
-    };
+    return { data, total, page, totalPages };
   },
 
-  // GENERATE NEXT QUOTE NUMBER (e.g., ORC758)
   async getNextQuoteNumber(): Promise<string> {
       const quotes = ensureCache();
-      
       let maxNumber = 0;
 
-      quotes.forEach(q => {
-          if (!q.number) return;
+      for (const q of quotes) {
+          if (!q.number) continue;
           const cleanNumber = q.number.toString().replace(/\D/g, ''); 
           if (cleanNumber) {
               const num = parseInt(cleanNumber, 10);
-              if (!isNaN(num) && num > maxNumber) {
-                  maxNumber = num;
-              }
+              if (!isNaN(num) && num > maxNumber) maxNumber = num;
           }
-      });
+      }
       
-      const nextNum = maxNumber > 0 ? maxNumber + 1 : 1;
-      return `ORC${nextNum}`;
+      return `ORC${maxNumber + 1}`;
   },
 
-  // Save or Update a quote
   async save(quote: QuoteData): Promise<QuoteData> {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const history = ensureCache();
-        let quoteToSave: QuoteData;
+    const history = ensureCache();
+    let quoteToSave: QuoteData;
 
-        if (quote.id) {
-            // Update existing
-            quoteToSave = {
-                ...quote,
-                lastUpdated: Date.now(),
-                status: quote.status || 'pending'
-            };
-            const index = history.findIndex(q => q.id === quote.id);
-            if (index >= 0) history[index] = quoteToSave;
-        } else {
-            // Create New
-            quoteToSave = {
-                ...quote,
-                id: getNextQuoteId(history),
-                lastUpdated: Date.now(),
-                status: quote.status || 'pending'
-            };
-            history.push(quoteToSave);
-        }
+    if (quote.id) {
+        quoteToSave = {
+            ...quote,
+            lastUpdated: Date.now(),
+            status: quote.status || 'pending'
+        };
+        const index = history.findIndex(q => q.id === quote.id);
+        if (index >= 0) history[index] = quoteToSave;
+    } else {
+        quoteToSave = {
+            ...quote,
+            id: getNextQuoteId(history),
+            lastUpdated: Date.now(),
+            status: quote.status || 'pending'
+        };
+        history.push(quoteToSave);
+    }
 
-        persistCache(); 
-        resolve(quoteToSave);
-      }, 300);
-    });
+    persistCache(); 
+    return quoteToSave;
   },
 
-  // Update only status
   async updateStatus(id: string, status: QuoteStatus): Promise<void> {
     const history = ensureCache();
     const index = history.findIndex(q => q.id === id);
     if (index >= 0) {
-        history[index].status = status;
-        history[index].lastUpdated = Date.now();
+        history[index] = { ...history[index], status, lastUpdated: Date.now() };
         persistCache();
     }
   },
 
-  // Delete a quote
   async delete(id: string): Promise<void> {
     const history = ensureCache();
     memoryCache = history.filter(q => q.id !== id);

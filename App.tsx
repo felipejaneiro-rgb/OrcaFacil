@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, Suspense, lazy, useCallback, useRef } from 'react';
+import React, { useState, useEffect, Suspense, lazy, useCallback, useRef, useMemo } from 'react';
 import { QuoteData, INITIAL_QUOTE, CompanyProfile, User } from './types';
 import StepIndicator from './components/StepIndicator';
 import Sidebar from './components/Sidebar'; 
@@ -34,7 +34,6 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [appError, setAppError] = useState<string | null>(null);
   
-  // Refs para controle de ciclo de vida sem disparar re-renders
   const initializingRef = useRef(false);
   const isFirstLoadRef = useRef(true);
 
@@ -46,16 +45,18 @@ const App: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
-  // Inicializa dados da empresa apenas se necessário
+  // Memoiza a data para evitar cálculos de string no render
+  const currentDateDisplay = useMemo(() => 
+    new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }),
+  []);
+
   const initializeCompany = useCallback(async (userId: string) => {
-    // Se já temos a empresa carregada, não buscamos novamente (evita flicker no Alt+Tab)
     if (defaultCompany) return;
 
     try {
       const company = await companyService.getCompany(userId);
       if (company) {
         setDefaultCompany(company);
-        // Só muda para dashboard se for a PRIMEIRA vez que abre o app
         if (isFirstLoadRef.current) {
           setCurrentView('dashboard');
         }
@@ -71,12 +72,8 @@ const App: React.FC = () => {
   }, [defaultCompany]);
 
   useEffect(() => {
-    // Monitor de Autenticação do Supabase
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log(`Auth Update: ${event}`);
-      
       if (session?.user) {
-        // Mapeia o usuário se ainda não tivermos ou se mudou
         if (!currentUser || currentUser.id !== session.user.id) {
           const user = authService.mapSupabaseUser(session.user);
           setCurrentUser(user);
@@ -88,11 +85,9 @@ const App: React.FC = () => {
             initializingRef.current = false;
           }
         } else {
-          // Se o usuário já está logado e mapeado, apenas remove o loader se houver
           setLoading(false);
         }
       } else {
-        // Caso de LOGOUT real
         if (event === 'SIGNED_OUT') {
           setCurrentUser(null);
           setDefaultCompany(null);
@@ -108,76 +103,29 @@ const App: React.FC = () => {
     };
   }, [currentUser, initializeCompany]);
 
-  const handleLogout = async () => {
+  const handleLogout = useCallback(async () => {
       if (confirm('Deseja sair da sua conta?')) {
         setLoading(true);
         await authService.logout();
       }
-  };
+  }, []);
 
-  if (appError) {
-    return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 p-4">
-            <div className="bg-white dark:bg-gray-900 p-8 rounded-3xl shadow-2xl max-w-md text-center border border-red-100">
-                <AlertCircle size={48} className="text-red-500 mx-auto mb-4" />
-                <h2 className="text-xl font-bold mb-2 dark:text-white">Erro no Aplicativo</h2>
-                <p className="text-gray-600 dark:text-gray-400 mb-6 text-sm">{appError}</p>
-                <button onClick={() => window.location.reload()} className="w-full bg-brand-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-brand-700 transition-colors">
-                  <RefreshCw size={18} /> Recarregar
-                </button>
-            </div>
-        </div>
-    );
-  }
+  const navigateToEditor = useCallback((data: QuoteData = INITIAL_QUOTE, step: number = 0) => {
+    setQuoteData(data);
+    setCurrentView('editor');
+    setCurrentStep(step);
+  }, []);
 
-  // Loader inicial silencioso se já tivermos dados
-  if (loading && !currentUser) {
-      return (
-        <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 dark:bg-gray-950">
-            <div className="relative flex items-center justify-center">
-                <div className="absolute w-16 h-16 border-4 border-brand-100 dark:border-brand-900/30 rounded-full"></div>
-                <Loader2 className="animate-spin text-brand-600" size={64} />
-            </div>
-            <div className="mt-8 text-center">
-                <p className="text-gray-800 dark:text-white font-black tracking-widest uppercase text-xs">OrçaFácil Admin</p>
-                <p className="text-gray-400 dark:text-gray-500 text-[10px] mt-1 font-bold animate-pulse">SINCRONIZANDO...</p>
-            </div>
-        </div>
-      );
-  }
-
-  // Se não tem usuário, mostra tela de login
-  if (!currentUser) {
-    return (
-      <Suspense fallback={null}>
-        <AuthView onLoginSuccess={() => {}} />
-      </Suspense>
-    );
-  }
-
-  // Se logou mas não configurou a empresa
-  if (currentView === 'onboarding') {
-    return (
-      <Suspense fallback={null}>
-        <OnboardingView 
-          userId={currentUser.id} 
-          userEmail={currentUser.email} 
-          onComplete={(company) => {
-            setDefaultCompany(company);
-            setCurrentView('dashboard');
-          }} 
-        />
-      </Suspense>
-    );
-  }
-
-  const renderContent = () => {
+  // Componente de conteúdo isolado para evitar re-render de toda a estrutura do App
+  const mainContent = useMemo(() => {
+    if (loading && !currentUser) return null;
+    
     try {
       switch (currentView) {
         case 'dashboard':
-          return <DashboardView user={currentUser} onNavigate={setCurrentView} onLoadQuote={(q) => { setQuoteData(q); setCurrentView('editor'); setCurrentStep(3); }} onNewQuote={() => { setQuoteData(INITIAL_QUOTE); setCurrentView('editor'); setCurrentStep(0); }} />;
+          return <DashboardView user={currentUser} onNavigate={setCurrentView} onLoadQuote={(q) => navigateToEditor(q, 3)} onNewQuote={() => navigateToEditor(INITIAL_QUOTE, 0)} />;
         case 'history':
-          return <HistoryModal isOpen={true} onClose={() => setCurrentView('dashboard')} onLoadQuote={(q) => { setQuoteData(q); setCurrentView('editor'); setCurrentStep(3); }} />;
+          return <HistoryModal isOpen={true} onClose={() => setCurrentView('dashboard')} onLoadQuote={(q) => navigateToEditor(q, 3)} />;
         case 'reports':
           return <ReportsView />;
         case 'catalog':
@@ -209,16 +157,69 @@ const App: React.FC = () => {
       setAppError(e.message);
       return null;
     }
-  };
+  }, [currentView, currentStep, quoteData, currentUser, defaultCompany, navigateToEditor, loading]);
+
+  if (appError) {
+    return (
+        <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 p-4">
+            <div className="bg-white dark:bg-gray-900 p-8 rounded-3xl shadow-2xl max-w-md text-center border border-red-100">
+                <AlertCircle size={48} className="text-red-500 mx-auto mb-4" />
+                <h2 className="text-xl font-bold mb-2 dark:text-white">Erro no Aplicativo</h2>
+                <p className="text-gray-600 dark:text-gray-400 mb-6 text-sm">{appError}</p>
+                <button onClick={() => window.location.reload()} className="w-full bg-brand-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-brand-700 transition-colors">
+                  <RefreshCw size={18} /> Recarregar
+                </button>
+            </div>
+        </div>
+    );
+  }
+
+  if (loading && !currentUser) {
+      return (
+        <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 dark:bg-gray-950">
+            <div className="relative flex items-center justify-center">
+                <div className="absolute w-16 h-16 border-4 border-brand-100 dark:border-brand-900/30 rounded-full"></div>
+                <Loader2 className="animate-spin text-brand-600" size={64} />
+            </div>
+            <div className="mt-8 text-center">
+                <p className="text-gray-800 dark:text-white font-black tracking-widest uppercase text-xs">OrçaFácil Admin</p>
+                <p className="text-gray-400 dark:text-gray-500 text-[10px] mt-1 font-bold animate-pulse">SINCRONIZANDO...</p>
+            </div>
+        </div>
+      );
+  }
+
+  if (!currentUser) {
+    return (
+      <Suspense fallback={null}>
+        <AuthView onLoginSuccess={() => {}} />
+      </Suspense>
+    );
+  }
+
+  if (currentView === 'onboarding') {
+    return (
+      <Suspense fallback={null}>
+        <OnboardingView 
+          userId={currentUser.id} 
+          userEmail={currentUser.email} 
+          onComplete={(company) => {
+            setDefaultCompany(company);
+            setCurrentView('dashboard');
+          }} 
+        />
+      </Suspense>
+    );
+  }
 
   return (
-    <div className="flex h-screen bg-gray-50 dark:bg-gray-950 font-sans overflow-hidden">
+    <div className="flex h-screen bg-gray-50 dark:bg-gray-950 font-sans overflow-hidden antialiased">
       <Sidebar 
         isOpen={isSidebarOpen} 
         onClose={() => setIsSidebarOpen(false)} 
         currentView={currentView} 
         onNavigate={setCurrentView} 
-        onNewQuote={() => { setQuoteData(INITIAL_QUOTE); setCurrentView('editor'); setCurrentStep(0); }} 
+        onNewQuote={() => navigateToEditor(INITIAL_QUOTE, 0)} 
         onToggleTheme={() => setIsDarkMode(!isDarkMode)} 
         isDarkMode={isDarkMode} 
         onLogout={handleLogout} 
@@ -228,20 +229,20 @@ const App: React.FC = () => {
       />
       
       <div className="flex-1 flex flex-col h-full overflow-hidden">
-        <header className="h-16 bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between px-6 z-30 shrink-0">
-           <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2 text-gray-500"><Menu /></button>
+        <header className="h-16 bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between px-6 z-30 shrink-0 shadow-sm">
+           <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2 text-gray-500 hover:bg-gray-100 rounded-lg"><Menu /></button>
            <div className="flex items-center gap-3">
-              <div className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse" />
+              <div className="w-2.5 h-2.5 rounded-full bg-green-500 shadow-sm shadow-green-500/50" />
               <h1 className="font-black text-gray-800 dark:text-white tracking-tighter uppercase text-sm">OrçaFácil Admin</h1>
            </div>
-           <div className="hidden md:flex items-center text-xs font-bold text-gray-400">
-             {new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
+           <div className="hidden md:flex items-center text-xs font-bold text-gray-400 select-none">
+             {currentDateDisplay}
            </div>
         </header>
         
-        <main className="flex-1 overflow-auto p-4 md:p-8 bg-gray-50 dark:bg-gray-950">
+        <main className="flex-1 overflow-auto p-4 md:p-8 bg-gray-50 dark:bg-gray-950 scroll-smooth">
            <Suspense fallback={<div className="flex items-center justify-center h-full"><Loader2 className="animate-spin text-brand-600" /></div>}>
-            {renderContent()}
+            {mainContent}
            </Suspense>
         </main>
       </div>
