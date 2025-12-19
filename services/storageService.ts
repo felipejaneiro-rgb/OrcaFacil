@@ -4,6 +4,7 @@ import { QuoteData, QuoteStatus, INITIAL_QUOTE } from '../types';
 const HISTORY_KEY = 'orcaFacil_history';
 
 // --- MEMORY CACHE (Performance Layer) ---
+// Evita ler do localStorage (lento e síncrono) em cada operação
 let memoryCache: QuoteData[] | null = null;
 
 // Helper to generate next Quote ID
@@ -44,7 +45,7 @@ const ensureCache = () => {
 
 const persistCache = () => {
     if (memoryCache) {
-        // Usa setTimeout para não bloquear o thread principal de UI durante o I/O
+        // Usa microtask (setTimeout 0) para não travar a UI durante a escrita no disco
         setTimeout(() => {
           localStorage.setItem(HISTORY_KEY, JSON.stringify(memoryCache));
         }, 0);
@@ -55,7 +56,7 @@ export const storageService = {
   
   async getAll(): Promise<QuoteData[]> {
     const history = ensureCache();
-    // Retorna uma cópia congelada para performance
+    // Retorna uma cópia congelada para performance (evita mutações acidentais)
     return Object.freeze([...history].sort((a, b) => (b.lastUpdated || 0) - (a.lastUpdated || 0))) as QuoteData[];
   },
 
@@ -75,7 +76,7 @@ export const storageService = {
         );
     }
 
-    // Sort é pesado, fazemos apenas no set de dados atual se possível
+    // Ordenação (Sort é uma operação cara, fazemos apenas se necessário)
     const sorted = [...filtered].sort((a, b) => (b.lastUpdated || 0) - (a.lastUpdated || 0));
 
     const total = sorted.length;

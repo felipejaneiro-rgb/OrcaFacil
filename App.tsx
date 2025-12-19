@@ -34,6 +34,7 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [appError, setAppError] = useState<string | null>(null);
   
+  // Refs para controle de ciclo de vida
   const initializingRef = useRef(false);
   const isFirstLoadRef = useRef(true);
 
@@ -116,8 +117,12 @@ const App: React.FC = () => {
     setCurrentStep(step);
   }, []);
 
-  // Componente de conteúdo isolado para evitar re-render de toda a estrutura do App
-  const mainContent = useMemo(() => {
+  const updateQuoteData = useCallback((d: Partial<QuoteData>) => {
+    setQuoteData(p => ({...p, ...d}));
+  }, []);
+
+  // Isola o conteúdo principal em um useMemo para evitar re-renders da Sidebar/Header
+  const renderViewContent = useMemo(() => {
     if (loading && !currentUser) return null;
     
     try {
@@ -137,9 +142,9 @@ const App: React.FC = () => {
             <div className="max-w-4xl mx-auto pb-10">
                 <StepIndicator currentStep={currentStep} onStepClick={setCurrentStep} />
                 <div className="mt-6">
-                    {currentStep === 0 && <CompanyForm data={quoteData} updateData={(d) => setQuoteData(p => ({...p, ...d}))} defaultCompany={defaultCompany || undefined} />}
-                    {currentStep === 1 && <ClientForm data={quoteData} updateData={(d) => setQuoteData(p => ({...p, ...d}))} />}
-                    {currentStep === 2 && <ItemsForm data={quoteData} updateData={(d) => setQuoteData(p => ({...p, ...d}))} />}
+                    {currentStep === 0 && <CompanyForm data={quoteData} updateData={updateQuoteData} defaultCompany={defaultCompany || undefined} />}
+                    {currentStep === 1 && <ClientForm data={quoteData} updateData={updateQuoteData} />}
+                    {currentStep === 2 && <ItemsForm data={quoteData} updateData={updateQuoteData} />}
                     {currentStep === 3 && <QuotePreview data={quoteData} onEdit={() => setCurrentStep(2)} onApprove={() => {}} />}
                 </div>
                 {currentStep < 3 && (
@@ -157,7 +162,7 @@ const App: React.FC = () => {
       setAppError(e.message);
       return null;
     }
-  }, [currentView, currentStep, quoteData, currentUser, defaultCompany, navigateToEditor, loading]);
+  }, [currentView, currentStep, quoteData, currentUser, defaultCompany, navigateToEditor, updateQuoteData, loading]);
 
   if (appError) {
     return (
@@ -183,7 +188,7 @@ const App: React.FC = () => {
             </div>
             <div className="mt-8 text-center">
                 <p className="text-gray-800 dark:text-white font-black tracking-widest uppercase text-xs">OrçaFácil Admin</p>
-                <p className="text-gray-400 dark:text-gray-500 text-[10px] mt-1 font-bold animate-pulse">SINCRONIZANDO...</p>
+                <p className="text-gray-400 dark:text-gray-500 text-[10px] mt-1 font-bold animate-pulse uppercase tracking-widest">Sincronizando Dados...</p>
             </div>
         </div>
       );
@@ -230,7 +235,7 @@ const App: React.FC = () => {
       
       <div className="flex-1 flex flex-col h-full overflow-hidden">
         <header className="h-16 bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between px-6 z-30 shrink-0 shadow-sm">
-           <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2 text-gray-500 hover:bg-gray-100 rounded-lg"><Menu /></button>
+           <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"><Menu /></button>
            <div className="flex items-center gap-3">
               <div className="w-2.5 h-2.5 rounded-full bg-green-500 shadow-sm shadow-green-500/50" />
               <h1 className="font-black text-gray-800 dark:text-white tracking-tighter uppercase text-sm">OrçaFácil Admin</h1>
@@ -242,7 +247,7 @@ const App: React.FC = () => {
         
         <main className="flex-1 overflow-auto p-4 md:p-8 bg-gray-50 dark:bg-gray-950 scroll-smooth">
            <Suspense fallback={<div className="flex items-center justify-center h-full"><Loader2 className="animate-spin text-brand-600" /></div>}>
-            {mainContent}
+            {renderViewContent}
            </Suspense>
         </main>
       </div>

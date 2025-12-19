@@ -8,7 +8,7 @@
     <meta name="theme-color" content="#2563eb" />
     <title>OrçaFácil - Gerador de Orçamentos</title>
     
-    <!-- DNS-Prefetch e Preconnect para acelerar o carregamento de módulos e fontes -->
+    <!-- Network Hints: Prepara a conexão antes do JS rodar -->
     <link rel="preconnect" href="https://esm.sh" crossorigin />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -44,7 +44,7 @@
       .no-scrollbar::-webkit-scrollbar { display: none; }
       .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
       
-      /* Otimização de GPU para animações */
+      /* Otimização de GPU para animações mais fluidas */
       .animate-fadeIn { animation: fadeIn 0.3s ease-out; will-change: opacity; }
       @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     </style>
