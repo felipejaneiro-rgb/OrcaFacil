@@ -35,6 +35,7 @@ const App: React.FC = () => {
   const [appError, setAppError] = useState<string | null>(null);
   
   const initializingRef = useRef(false);
+  const hasLoadedRef = useRef(false);
 
   const [currentView, setCurrentView] = useState<AppView>('dashboard');
   const [currentStep, setCurrentStep] = useState(0);
@@ -61,12 +62,16 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    // FAIL-SAFE: Se o app não carregar em 6 segundos, libera a tela para login
+    // Se já carregamos a sessão inicial, não precisamos assinar novamente
+    if (hasLoadedRef.current) return;
+
+    // FAIL-SAFE: Se o app não carregar em 6 segundos, libera a tela
     const timer = setTimeout(() => {
-        if (loading) {
+        if (!hasLoadedRef.current) {
             console.warn("Fail-safe ativado: Carregamento demorou demais.");
             setLoading(false);
-        }
+            hasLoadedRef.current = true;
+          }
     }, 6000);
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -75,7 +80,6 @@ const App: React.FC = () => {
       if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
         if (session?.user && !initializingRef.current) {
           initializingRef.current = true;
-          setLoading(true);
           
           try {
             const user = authService.mapSupabaseUser(session.user);
@@ -86,16 +90,22 @@ const App: React.FC = () => {
           } finally {
             setLoading(false);
             initializingRef.current = false;
+            hasLoadedRef.current = true;
+            clearTimeout(timer);
           }
         } else if (!session) {
           setLoading(false);
+          hasLoadedRef.current = true;
+          clearTimeout(timer);
         }
       } else if (event === 'SIGNED_OUT') {
         setCurrentUser(null);
         setDefaultCompany(null);
         setLoading(false);
         initializingRef.current = false;
+        hasLoadedRef.current = true;
         setCurrentView('dashboard');
+        clearTimeout(timer);
       }
     });
 
@@ -103,7 +113,8 @@ const App: React.FC = () => {
         subscription.unsubscribe();
         clearTimeout(timer);
     };
-  }, [loadCompanyData, loading]);
+    // REMOVIDO 'loading' das dependências para evitar loop infinito e re-load no Alt+Tab
+  }, [loadCompanyData]);
 
   const handleLogout = async () => {
       if (confirm('Deseja sair da sua conta?')) {
